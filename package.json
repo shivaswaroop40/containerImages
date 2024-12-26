@@ -7,5 +7,8 @@
     "test": "exit 0"
   },
   "author": "Shiva Swaroop N K",
-  "license": "ISC"
+  "license": "ISC",
+  "publishConfig": {
+    "@SHIVASWAROOP40:registry": "https://npm.pkg.github.com"
+}
 }
