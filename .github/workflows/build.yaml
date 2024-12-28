@@ -28,3 +28,4 @@ jobs:
       with:
           push: true
           tags: ghcr.io/shivaswaroop40/containerimages/my-unsigned-image:v1
+          outputs: type=oci,dest=/tmp/output.tar
