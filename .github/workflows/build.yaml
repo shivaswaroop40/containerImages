@@ -34,6 +34,7 @@ jobs:
       id: build-and-push
       with:
         push: true
+        platforms: linux/amd64,linux/arm64
         tags: ${{ steps.docker_meta_unsigned.outputs.tags }}
         outputs: type=oci,dest=/tmp/output-unsigned.tar
 
@@ -50,8 +51,12 @@ jobs:
     - name: Install Cosign
       uses: sigstore/cosign-installer@v3.7.0
 
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3.2.0
+
     - name: setup docker buildx
       uses: docker/setup-buildx-action@v3.8.0
+
 
     - name: login to ghcr
       uses: docker/login-action@v3.3.0
@@ -71,13 +76,14 @@ jobs:
       id: build-and-push
       with:
         push: true
+        platforms: linux/amd64,linux/arm64
         tags: ${{ steps.docker_meta_signed.outputs.tags }}
         outputs: type=oci,dest=/tmp/output-signed.tar
 
     - name: Sign and verify image with a key
       run: |
         images="${TAGS}@${DIGEST}"
-        cosign sign --yes --key env://COSIGN_PRIVATE_KEY ${images} --tlog-upload=false
+        cosign sign --yes --key env://COSIGN_PRIVATE_KEY ${images} 
         echo "------------------------"
         echo "Verifying the signature"
         cosign verify --key env://COSIGN_PUBLIC_KEY ${images}
