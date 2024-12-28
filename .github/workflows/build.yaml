@@ -77,7 +77,7 @@ jobs:
     - name: Sign and verify image with a key
       run: |
         images="${TAGS}@${DIGEST}"
-        cosign sign --yes --key env://COSIGN_PRIVATE_KEY ${images}
+        cosign sign --yes --key env://COSIGN_PRIVATE_KEY ${images} --tlog-upload=false
         echo "------------------------"
         echo "Verifying the signature"
         cosign verify --key env://COSIGN_PUBLIC_KEY ${images}
