@@ -30,7 +30,7 @@ jobs:
         uses: docker/metadata-action@v4.4.0
         with:
           images: ghcr.io/shivaswaroop40/containerimages/my-unsigned-image
-          tags: type=semver,format=short
+          tags: type=sha,format=short
 
       - name: Build and Push Unsigned Image
         uses: docker/build-push-action@v6.10.0
@@ -72,7 +72,7 @@ jobs:
         uses: docker/metadata-action@v4.4.0
         with:
           images: ghcr.io/shivaswaroop40/containerimages/my-signed-image
-          tags: type=semver,format=short
+          tags: type=sha,format=short
 
       - name: Build and Push Signed Image
         uses: docker/build-push-action@v6.10.0
