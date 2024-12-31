@@ -1,12 +1,23 @@
 name: Build and Sign Docker Images
-'on':
-  workflow_dispatch:
 
-    null
+on:
+  workflow_dispatch:
+    inputs:
+      job:
+        description: "Select which job to run"
+        required: true
+        type: choice
+        options:
+          - build-unsigned
+          - build-signed
+          - minikube-install
+          - setup-kyverno
+
 jobs:
   build-unsigned:
     name: Build and Push Unsigned Image
     runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.job == 'build-unsigned' }}
     permissions:
       contents: read
       packages: write
@@ -43,6 +54,7 @@ jobs:
   build-signed:
     name: Build and Push Signed Image
     runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.job == 'build-signed' }}
     permissions:
       contents: read
       packages: write
@@ -93,42 +105,48 @@ jobs:
           COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
           COSIGN_PUBLIC_KEY: ${{ secrets.COSIGN_PUBLIC_KEY }}
-      
 
-      - name: Start minikube
+  minikube-install:
+    name: Start and Configure Minikube
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.job == 'minikube-install' }}
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Start Minikube
         uses: medyagh/setup-minikube@latest
-      # now you can run kubectl to see the pods in the cluster
 
-      - name: Try the cluster!
+      - name: Verify Cluster
         run: kubectl get pods -A
     
-      # - name: Set up Helm
-      #   uses: azure/setup-helm@v3
-      #   with:
-      #     version: 'v3.12.3' # Replace with your Helm version
+  setup-kyverno:
+    name: Start and Configure Minikube
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.job == 'setup-kyverno' }}
+    permissions:
+      contents: read
+      packages: write
 
-      # - name: Add Kyverno Helm Repo
-      #   run: helm repo add kyverno https://kyverno.github.io/kyverno/
+    steps:
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'v3.12.3'
 
-      # - name: Update Helm Repos
-      #   run: helm repo update
+      - name: Add Kyverno Helm Repo
+        run: helm repo add kyverno https://kyverno.github.io/kyverno/
 
-      # - name: Install Kyverno
-      #   run: |
-      #     helm upgrade --install kyverno kyverno/kyverno \
-      #       --namespace kyverno \
-      #       --create-namespace \
-      #       --set replicaCount=2 \
-      #       --set podSecurityPolicy.enabled=true # Optional customizations
+      - name: Update Helm Repos
+        run: helm repo update
 
-      # - name: Verify Kyverno Installation
-      #   run: |
-      #     kubectl get pods -n kyverno
+      - name: Install Kyverno
+        run: |
+          helm upgrade --install kyverno kyverno/kyverno \
+            --namespace kyverno \
+            --create-namespace \
+            --set replicaCount=2
 
-      # - name: Add Cluster Policy
-      #   run: |
-      #     kubectl apply -f cluster-policy.yaml          
-        
-      # - name: Deploy to minikube
-      #   run: |
-      #     kubectl apply -f signed-app.yaml
+      - name: Verify Kyverno Installation
+        run: kubectl get pods -n kyverno
