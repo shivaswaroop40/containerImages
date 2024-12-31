@@ -1,0 +1,31 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: check-image
+spec:
+  validationFailureAction: Enforce
+  background: false
+  webhookTimeoutSeconds: 30
+  failurePolicy: Fail
+  rules:
+    - name: check-image
+      match:
+        any:
+        - resources:
+            kinds:
+              - Pod
+      verifyImages:
+      - imageReferences: 
+        - "ghcr.io/shivaswaroop40/containerimages/*"
+        mutateDigest: true
+        attestors:
+        - entries:
+          - keys:
+              publicKeys: |
+                -----BEGIN PUBLIC KEY-----
+                MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE2C/kA7Vgp7v/feY2yfT3NcjLLyqO
+                m8OximBFT0FToejsQxGcPN202Pp0igOccesAmI+YRUmUH2rDBWECbmWXpg==
+                -----END PUBLIC KEY-----
+        imageRegistryCredentials:
+          secrets: 
+          - ghcr-secret

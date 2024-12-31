@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: signed-image-pod
+  spec:
+  containers:
+    - name: signed-container
+      image: ghcr.io/shivaswaroop40/containerimages/my-signed-image:sha-20a9f87
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+  imagePullSecrets:
+    - name: ghcr-secret
+
+
+
