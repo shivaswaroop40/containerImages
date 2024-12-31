@@ -2,22 +2,21 @@ name: Build and Sign Docker Images
 
 on:
   workflow_dispatch:
-    inputs:
-      job:
-        description: "Select which job to run"
-        required: true
-        type: choice
-        options:
-          - build-unsigned
-          - build-signed
-          - minikube-install
-          - setup-kyverno
+    # inputs:
+    #   job:
+    #     description: "Select which job to run"
+    #     required: true
+    #     type: choice
+    #     options:
+    #       - build-unsigned
+    #       - build-signed
+    #       - minikube-install
 
 jobs:
   build-unsigned:
     name: Build and Push Unsigned Image
     runs-on: ubuntu-latest
-    if: ${{ github.event.inputs.job == 'build-unsigned' }}
+    # if: ${{ github.event.inputs.job == 'build-unsigned' }}
     permissions:
       contents: read
       packages: write
@@ -54,7 +53,7 @@ jobs:
   build-signed:
     name: Build and Push Signed Image
     runs-on: ubuntu-latest
-    if: ${{ github.event.inputs.job == 'build-signed' }}
+    # if: ${{ github.event.inputs.job == 'build-signed' }}
     permissions:
       contents: read
       packages: write
@@ -109,7 +108,7 @@ jobs:
   minikube-install:
     name: Start and Configure Minikube
     runs-on: ubuntu-latest
-    if: ${{ github.event.inputs.job == 'minikube-install' }}
+    # if: ${{ github.event.inputs.job == 'minikube-install' }}
     permissions:
       contents: read
       packages: write
@@ -122,9 +121,9 @@ jobs:
         run: kubectl get pods -A
     
   setup-kyverno:
-    name: Start and Configure Minikube
+    name: Setup Kyverno
     runs-on: ubuntu-latest
-    if: ${{ github.event.inputs.job == 'setup-kyverno' }}
+    needs: minikube-install
     permissions:
       contents: read
       packages: write
