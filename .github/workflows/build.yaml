@@ -99,7 +99,7 @@ jobs:
       - name: Scan image in a private registry
         uses: aquasecurity/trivy-action@0.28.0
         with:
-          image-ref: 'ghcr.io/shivaswaroop40/containerimages/my-signed-image:${{ steps.docker_meta_signed.outputs.tags }}'
+          image-ref: '${{ steps.docker_meta_signed.outputs.tags }}'
           scan-type: image
           format: 'github'
           output: 'dependency-results.sbom.json'
