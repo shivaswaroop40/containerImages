@@ -1,107 +1,125 @@
-# **Docker Image Build and Signing Workflow**
+# GitHub Actions: Build, Scan, and Sign Docker Images
 
-This repository contains a GitHub Actions workflow to:
+This workflow automates the **building**, **scanning**, and **signing** of container images using **GitHub Actions**.
 
-1. Build and push Docker images to **GitHub Container Registry (GHCR)**.
-2. Sign container images using **Cosign**.
-3. Verify image signatures to ensure security.
-
----
-
-## **Workflow Overview**
-
-### **Trigger**
-
-- Trigger manually via the `workflow_dispatch` event.
-
-### **Jobs**
-
-1. **Build Unsigned Image**: Builds and pushes unsigned container images.
-2. **Build Signed Image**: Builds, signs, and pushes container images.
+## 📌 Overview
+1. **Build and Push Unsigned Image**: Creates a Docker image and pushes it to GHCR.
+2. **Build and Push Signed Image**: Builds a signed container image using Cosign.
+3. **Scan Image for Vulnerabilities**: Uses Trivy to detect security issues.
+4. **Sign and Verify Image**: Ensures authenticity with Cosign.
 
 ---
 
-## **How to Use**
+## 🚀 Stages Explained
 
-### **1. Setting Up Secrets**
+### 🔨 Build and Push Unsigned Image
+- Uses **Docker Buildx** to build a multi-platform image.
+- Pushes an **unsigned** image to GitHub Container Registry (GHCR).
 
-Add the following secrets to your repository:
-
-| Secret Name             | Description                                           |
-|-------------------------|-------------------------------------------------------|
-| `GITHUB_TOKEN`          | Auto-generated token for accessing GHCR.             |
-| `COSIGN_PRIVATE_KEY`    | Private key for signing images with Cosign.          |
-| `COSIGN_PUBLIC_KEY`     | Public key for verifying signatures.                 |
-| `COSIGN_PASSWORD`       | Password for decrypting the private key.             |
-
----
-
-### **2. Running the Workflow**
-
-1. Navigate to the **Actions** tab in your GitHub repository.
-2. Select **Build and Sign Docker Images**.
-3. Click **Run workflow** to trigger the workflow.
+#### **Key Workflow Steps:**
+1. Checkout repository code.
+2. Set up **Docker Buildx**.
+3. Authenticate to **GHCR**.
+4. Generate metadata (tags) for the image.
+5. Build and push the **unsigned** image.
 
 ---
 
-## **Workflow Steps**
+### 🔏 Build and Push Signed Image
+- Builds and signs the image using **Cosign**.
+- Supports **linux/amd64** and **linux/arm64** platforms.
+- Stores the signed image in **GHCR**.
 
-### **Build Unsigned Image**
-
-- Checks out the code.
-- Sets up Docker Buildx.
-- Logs into GHCR.
-- Generates metadata (tags and digest).
-- Builds and pushes the unsigned image.
-- Saves the image as an OCI tarball at `/tmp/output-unsigned.tar`.
-
-### **Build Signed Image**
-
-- Installs Cosign for signing images.
-- Sets up Docker Buildx and QEMU for multi-platform builds.
-- Logs into GHCR.
-- Generates metadata (tags and digest).
-- Builds and pushes the signed image.
-- Signs the image using Cosign.
-- Verifies the image signature with Cosign.
+#### **Key Workflow Steps:**
+1. Install **Cosign** for signing images.
+2. Enable **QEMU** for multi-platform support.
+3. Set up **Docker Buildx**.
+4. Authenticate to **GHCR**.
+5. Generate metadata (tags) for the image.
+6. Build and push the **signed** image.
 
 ---
 
-## **Outputs**
+### 🛡️ Scan Image for Vulnerabilities (Trivy)
+- Uses [Aqua Security's Trivy](https://github.com/aquasecurity/trivy) to scan for vulnerabilities.
+- Supports severity levels **MEDIUM, HIGH, CRITICAL**.
+- Generates a Software Bill of Materials (SBOM) report.
 
-- **Unsigned Image**:
-  - **Path**: `ghcr.io/shivaswaroop40/containerimages/my-unsigned-image`
-  - **Tarball**: `/tmp/output-unsigned.tar`
-- **Signed Image**:
-  - **Path**: `ghcr.io/shivaswaroop40/containerimages/my-signed-image`
-  - **Tarball**: `/tmp/output-signed.tar`
+#### **Key Workflow Steps:**
+1. Authenticate using GitHub credentials.
+2. Scan the **signed image**.
+3. Upload the **SBOM report** as a GitHub artifact.
 
 ---
 
-## **Example Commands**
+### 🔐 Sign and Verify Image (Cosign)
+- Uses [Cosign](https://github.com/sigstore/cosign) to sign and verify the image.
+- Ensures the container image is **trusted and secure** before deployment.
 
-### **Verify Image Locally**
+#### **Key Workflow Steps:**
+1. **Sign the image** using `cosign sign`.
+2. **Verify the signature** using `cosign verify`.
+
+#### **Inputs & Secrets:**
+| Name                | Description                                   |
+|---------------------|----------------------------------------------|
+| `COSIGN_PRIVATE_KEY` | Private key used for signing.               |
+| `COSIGN_PASSWORD`    | Password to unlock the private key.         |
+| `COSIGN_PUBLIC_KEY`  | Public key for verifying the signature.     |
+
+---
+
+## 📌 How to Use This Workflow
+1. Ensure you have the required **secrets** set up in your GitHub repository:
+   - `GITHUB_TOKEN`
+   - `COSIGN_PRIVATE_KEY`
+   - `COSIGN_PUBLIC_KEY`
+   - `COSIGN_PASSWORD`
+2. Push a Docker image to a private registry.
+3. Trigger the GitHub Action.
+4. View Trivy results under **GitHub Actions → Artifacts**.
+5. Verify that the image is signed successfully.
+
+---
+
+## 🛠️ Troubleshooting
+- **Build fails**: Ensure `GHCR` authentication is correctly configured.
+- **Trivy scan issues**: Check if the correct image tag is used.
+- **Cosign verification fails**: Verify that the correct **public key** is used.
+
+For any issues, refer to:
+- [Trivy Documentation](https://aquasecurity.github.io/trivy/)
+- [Cosign Documentation](https://docs.sigstore.dev/cosign/overview/)
+
+---
+
+## 📢 Additional Notes
+- This workflow supports **multi-platform builds**.
+- Trivy can scan for **misconfigurations, secrets, and licenses**.
+- Cosign integrates with **Sigstore** for keyless signing.
+
+This workflow ensures that your container images are **secure, signed, and verifiable** before deployment. ✅
+
+## Example Commands
+### Verify Image Locally
 
 Use Cosign to verify a signed image:
 
-```bash
-cosign verify --key <path-to-public-key> ghcr.io/shivaswaroop40/containerimages/my-signed-image
-```
+    cosign verify --key <path-to-public-key> ghcr.io/shivaswaroop40/containerimages/my-signed-image 
 
-Tools Used
+### Tools Used
 
-Docker Buildx
-	•	Advanced Docker builds with multi-platform support.
+- Docker Buildx • Advanced Docker builds with multi-platform support.
 
-Cosign
-	•	Sign and verify container images to enhance security.
+- Cosign • Sign and verify container images to enhance security.
 
-GHCR
-	•	GitHub-hosted container registry for Docker images.
+- GHCR • GitHub-hosted container registry for Docker images.
+Feedback and Contributions
 
-## Feedback and Contributions
+- Trivy: Container Security Tool
 
 We welcome your feedback and contributions!
+
 - Open issues to suggest improvements or report problems.
 - Submit pull requests to enhance the workflow.
 
@@ -109,6 +127,8 @@ Contact
 
 Feel free to reach out for questions or collaboration opportunities!
 
-Shivaswaroop Nittoor Krshnamurthy
-- LinkedIn: Your Profile
-- Twitter: Your Handle
+Email: shivaswaroop40@gmail.com
+
+LinkedIn: [Shiva Swaroop N K](https://www.linkedin.com/in/shivaswaroop-nittoor-krishnamurthy-67551a14b/)
+
+Twitter: [Shiva Swaroop N K](https://x.com/shivu_2412)

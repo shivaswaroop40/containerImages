@@ -2,15 +2,6 @@ name: Build and Sign Docker Images
 
 on:
   workflow_dispatch:
-    # inputs:
-    #   job:
-    #     description: "Select which job to run"
-    #     required: true
-    #     type: choice
-    #     options:
-    #       - build-unsigned
-    #       - build-signed
-    #       - minikube-install
 
 jobs:
   build-unsigned:
