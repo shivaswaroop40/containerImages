@@ -5,7 +5,7 @@ metadata:
 spec:
   containers:
     - name: unsigned-container
-      image: ghcr.io/shivaswaroop40/containerimages/my-unsigned-image:sha-20a9f87
+      image: ghcr.io/shivaswaroop40/containerimages/my-unsigned-image:sha-2993ecb
       resources:
         requests:
           cpu: 100m

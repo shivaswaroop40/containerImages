@@ -2,10 +2,10 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: signed-image-pod
-  spec:
+spec:
   containers:
     - name: signed-container
-      image: ghcr.io/shivaswaroop40/containerimages/my-signed-image:sha-20a9f87
+      image: ghcr.io/shivaswaroop40/containerimages/my-signed-image:sha-2993ecb
       resources:
         requests:
           cpu: 100m

@@ -21,11 +21,9 @@ spec:
         attestors:
         - entries:
           - keys:
-              publicKeys: |
-                -----BEGIN PUBLIC KEY-----
-                MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE2C/kA7Vgp7v/feY2yfT3NcjLLyqO
-                m8OximBFT0FToejsQxGcPN202Pp0igOccesAmI+YRUmUH2rDBWECbmWXpg==
-                -----END PUBLIC KEY-----
+              secret:
+                name: cosign-public-key
+                namespace: kyverno
         imageRegistryCredentials:
           secrets: 
           - ghcr-secret
