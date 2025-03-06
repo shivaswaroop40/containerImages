@@ -123,6 +123,8 @@ We welcome your feedback and contributions!
 - Open issues to suggest improvements or report problems.
 - Submit pull requests to enhance the workflow.
 
+### Link to my presentation: [CNCF](/CNCF.pdf)
+
 Contact
 
 Feel free to reach out for questions or collaboration opportunities!
