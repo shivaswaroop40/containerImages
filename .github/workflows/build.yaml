@@ -102,13 +102,6 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/signed
           tags: type=sha,format=short
 
-      - name: Generate SBOM
-        uses: anchore/sbom-action@v0.15.0
-        with:
-          image: ${{ steps.docker_meta_signed.outputs.tags }}
-          format: cyclonedx-json
-          output-file: sbom.json
-
       - name: Build and Push Signed Image
         uses: docker/build-push-action@v6.10.0
         id: build-and-push
@@ -119,6 +112,13 @@ jobs:
           outputs: type=oci,dest=/tmp/output-signed.tar
           provenance: true
           sbom: true
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0.15.0
+        with:
+          image: ${{ steps.docker_meta_signed.outputs.tags }}
+          format: cyclonedx-json
+          output-file: sbom.json
 
       - name: Echo build status
         run: |
