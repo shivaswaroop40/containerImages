@@ -167,7 +167,7 @@ jobs:
 
   security-scan:
     name: Security Scanning
-    needs: [build-signed, generate-slsa]
+    needs: [build-signed]
     runs-on: ubuntu-24.04
     if: ${{ github.event.inputs.job == 'security-scan' || github.event_name == 'push' || github.event_name == 'pull_request' }}
     permissions:
