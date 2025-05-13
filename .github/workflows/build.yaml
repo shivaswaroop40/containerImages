@@ -169,7 +169,7 @@ jobs:
     with:
       image: ${{ needs.build-signed.outputs.tags }}
       digest: ${{ needs.build-signed.outputs.digest }}
-      registry: ${{ env.REGISTRY }}
+      registry: ghcr.io
       push: true
       provenance: true
       sbom: true
