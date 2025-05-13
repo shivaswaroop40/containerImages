@@ -118,6 +118,7 @@ jobs:
         with:
           image: ${{ steps.docker_meta_signed.outputs.tags }}
           format: cyclonedx-json
+          artifact-name: sbom.json
           output-file: sbom.json
 
       - name: Echo build status
