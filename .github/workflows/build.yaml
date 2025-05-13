@@ -113,14 +113,6 @@ jobs:
           provenance: true
           sbom: true
 
-      - name: Generate SBOM
-        uses: anchore/sbom-action@v0.15.0
-        with:
-          image: ${{ steps.docker_meta_signed.outputs.tags }}
-          format: cyclonedx-json
-          artifact-name: sbom.spdx
-          output-file: sbom.spdx
-
       - name: Echo build status
         run: |
           echo "🏗️ Multi-platform build completed"
@@ -138,6 +130,13 @@ jobs:
           cosign sign --key env://COSIGN_PRIVATE_KEY ${{ steps.docker_meta_signed.outputs.tags }}
           echo "✅ Image signing completed successfully"
 
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0.15.0
+        with:
+          image: ${{ steps.docker_meta_signed.outputs.tags }}
+          format: cyclonedx-json
+          output-file: sbom.json
+
       - name: Attach SBOM
         env:
           COSIGN_EXPERIMENTAL: 1
@@ -151,6 +150,13 @@ jobs:
             --sbom sbom.json \
             ${{ steps.docker_meta_signed.outputs.tags }}
           echo "✅ SBOM attachment completed successfully"
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-cyclonedx
+          path: sbom.json
+          retention-days: 20
 
       - name: Verify image
         env:
