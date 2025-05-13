@@ -169,10 +169,10 @@ jobs:
     with:
       image: ${{ needs.build-signed.outputs.tags }}
       digest: ${{ needs.build-signed.outputs.digest }}
-      registry: ghcr.io
-      push: true
       provenance: true
       sbom: true
+      slsa-version: v1.0
+      slsa-workflow-recipient: "ghcr.io"
     permissions:
       contents: read
       packages: write
