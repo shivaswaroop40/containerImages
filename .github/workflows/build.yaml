@@ -150,12 +150,6 @@ jobs:
             ${{ steps.docker_meta_signed.outputs.tags }}
           echo "✅ SBOM attachment completed successfully"
 
-      - name: Generate SLSA provenance
-        uses: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@v1.8.0
-        with:
-          image: ${{ steps.docker_meta_signed.outputs.tags }}
-          push: true
-
       - name: Verify image
         env:
           COSIGN_EXPERIMENTAL: 1
@@ -167,9 +161,21 @@ jobs:
           cosign verify --key env://COSIGN_PUBLIC_KEY ${{ steps.docker_meta_signed.outputs.tags }}
           echo "✅ Image verification completed successfully"
 
+  generate-slsa:
+    name: Generate SLSA Provenance
+    needs: build-signed
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@v1.8.0
+    with:
+      image: ${{ needs.build-signed.outputs.tags }}
+      push: true
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+
   security-scan:
     name: Security Scanning
-    needs: build-signed
+    needs: [build-signed, generate-slsa]
     runs-on: ubuntu-24.04
     if: ${{ github.event.inputs.job == 'security-scan' || github.event_name == 'push' || github.event_name == 'pull_request' }}
     permissions:
@@ -198,8 +204,7 @@ jobs:
 
       - name: Echo vulnerability scan status
         run: |
-          echo "✅ Vulnerability scan completed"
-          echo "⚡ Checked for CRITICAL and HIGH severity issues"
+          echo "✅ Security scanning completed"
 
       - name: Run Trivy config scanner
         uses: aquasecurity/trivy-action@master
