@@ -93,4 +93,4 @@ spec:
           validate:
             message: "Container {{ element.name }} image must be referenced by digest"
             pattern:
-              image: "ghcr.io/shivaswaroop40/containerimages/*@sha256:*
+              image: "ghcr.io/shivaswaroop40/containerimages/*@sha256:*"
