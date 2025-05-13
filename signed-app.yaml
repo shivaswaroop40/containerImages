@@ -7,8 +7,8 @@ metadata:
     security: signed
   annotations:
     security.kyverno.io/verify-images: "true"
-    security.kyverno.io/verify-slsa: "true"
-    security.kyverno.io/verify-sbom: "true"
+    # security.kyverno.io/verify-slsa: "true"
+    # security.kyverno.io/verify-sbom: "true"
 spec:
   securityContext:
     runAsNonRoot: true

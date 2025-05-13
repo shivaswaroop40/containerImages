@@ -164,17 +164,6 @@ jobs:
           cosign verify --key env://COSIGN_PUBLIC_KEY ${{ steps.docker_meta_signed.outputs.tags }}
           echo "✅ Image verification completed successfully"
 
-
-  security-scan:
-    name: Security Scanning
-    needs: [build-signed]
-    runs-on: ubuntu-24.04
-    if: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
-    permissions:
-      contents: read
-      packages: read
-
-    steps:
       - name: Echo scan start
         run: |
           echo "🔍 Starting security scanning process..."
@@ -183,7 +172,7 @@ jobs:
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ needs.build-signed.outputs.tags }}
+          image-ref: ${{ build-signed.outputs.tags }}
           format: 'table'
           exit-code: '1'
           ignore-unfixed: true
@@ -202,7 +191,7 @@ jobs:
       - name: Run Trivy config scanner
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ needs.build-signed.outputs.tags }}
+          image-ref: ${{ build-signed.outputs.tags }}
           format: 'table'
           exit-code: '1'
           ignore-unfixed: true

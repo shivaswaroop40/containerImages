@@ -27,8 +27,8 @@ help:
 	@echo "  scan-unsigned    - Scan unsigned image"
 	@echo "  sign             - Sign the image"
 	@echo "  verify           - Verify the image signature"
-	@echo "  deploy-signed    - Deploy signed pod"
-	@echo "  deploy-unsigned  - Deploy unsigned pod"
+	@echo "  deploy-signed    - Deploy signed pod (use: make deploy-signed TAG=<sha>)"
+	@echo "  deploy-unsigned  - Deploy unsigned pod (use: make deploy-unsigned TAG=<sha>)"
 	@echo "  clean            - Clean up images"
 	@echo "  get-latest-sha   - Get the latest image SHA from registry"
 
@@ -88,12 +88,20 @@ verify:
 deploy-signed:
 	@echo "🚀 Deploying signed pod..."
 	@echo "Using image tag: $(TAG)"
-	export IMAGE_SHA=$(TAG); $(ENVSUBST) < signed-app.yaml | $(KUBECTL) apply -f -
+	@if [ -z "$(TAG)" ]; then \
+		echo "Error: TAG is not set. Please run: make deploy-signed TAG=<sha>"; \
+		exit 1; \
+	fi
+	IMAGE_SHA=$(TAG) $(ENVSUBST) < signed-app.yaml | $(KUBECTL) apply -f -
 
 deploy-unsigned:
 	@echo "🚀 Deploying unsigned pod..."
 	@echo "Using image tag: $(TAG)"
-	export IMAGE_SHA=$(TAG); $(ENVSUBST) < unsigned-app.yaml | $(KUBECTL) apply -f -
+	@if [ -z "$(TAG)" ]; then \
+		echo "Error: TAG is not set. Please run: make deploy-unsigned TAG=<sha>"; \
+		exit 1; \
+	fi
+	IMAGE_SHA=$(TAG) $(ENVSUBST) < unsigned-app.yaml | $(KUBECTL) apply -f -
 
 # Generate keys
 generate-keys:
