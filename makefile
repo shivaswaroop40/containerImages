@@ -10,6 +10,7 @@ COSIGN_PRIVATE_KEY ?= $(error COSIGN_PRIVATE_KEY is not set)
 COSIGN_PUBLIC_KEY ?= $(error COSIGN_PUBLIC_KEY is not set)
 KUBECTL = kubectl
 ENVSUBST = envsubst
+POLICY_DIR = policies
 
 # Image names
 SIGNED_IMAGE = $(GHCR)/$(IMAGE_NAME)/signed
@@ -31,6 +32,9 @@ help:
 	@echo "  deploy-unsigned  - Deploy unsigned pod (use: make deploy-unsigned TAG=<sha>)"
 	@echo "  clean            - Clean up images"
 	@echo "  get-latest-sha   - Get the latest image SHA from registry"
+	@echo "  policy-create    - Create cluster policy"
+	@echo "  policy-verify    - Verify cluster policy"
+	@echo "  policy-cleanup   - Remove cluster policy"
 
 # Get latest SHA from registry
 get-latest-sha:
@@ -103,6 +107,36 @@ deploy-unsigned:
 	fi
 	IMAGE_SHA=$(TAG) $(ENVSUBST) < unsigned-app.yaml | $(KUBECTL) apply -f -
 
+# Policy targets
+policy-create:
+	@echo "📝 Creating cluster policy..."
+	@if [ ! -d "$(POLICY_DIR)" ]; then \
+		mkdir -p $(POLICY_DIR); \
+	fi
+	@echo "🔍 Checking if Kyverno is installed..."
+	@if ! $(KUBECTL) get ns kyverno >/dev/null 2>&1; then \
+		echo "❌ Kyverno namespace not found. Please install Kyverno first."; \
+		exit 1; \
+	fi
+	@echo "📄 Applying cluster policy..."
+	$(KUBECTL) apply -f cluster-policy.yaml
+	@echo "✅ Cluster policy created successfully"
+
+policy-verify:
+	@echo "🔍 Verifying cluster policy..."
+	@if ! $(KUBECTL) get clusterpolicy check-image >/dev/null 2>&1; then \
+		echo "❌ Cluster policy not found"; \
+		exit 1; \
+	fi
+	@echo "📊 Policy status:"
+	$(KUBECTL) get clusterpolicy check-image -o yaml | grep -A 5 "status:"
+	@echo "✅ Cluster policy verification completed"
+
+policy-cleanup:
+	@echo "🧹 Cleaning up cluster policy..."
+	$(KUBECTL) delete -f cluster-policy.yaml || true
+	@echo "✅ Cluster policy cleanup completed"
+
 # Generate keys
 generate-keys:
 	@echo "🔑 Generating Cosign key pair..."
@@ -117,4 +151,4 @@ clean:
 # Default target
 all: build-signed build-unsigned push-signed push-unsigned scan-signed scan-unsigned sign verify
 
-.PHONY: all help build-signed build-unsigned push-signed push-unsigned scan-signed scan-unsigned sign verify deploy-signed deploy-unsigned generate-keys clean get-latest-sha
+.PHONY: all help build-signed build-unsigned push-signed push-unsigned scan-signed scan-unsigned sign verify deploy-signed deploy-unsigned generate-keys clean get-latest-sha policy-create policy-verify policy-cleanup
