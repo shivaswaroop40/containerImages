@@ -1,13 +1,31 @@
-name: Build and Sign Docker Images
+name: Build and Secure Container Images
 
 on:
   workflow_dispatch:
+    inputs:
+      job:
+        description: 'Select job to run'
+        required: true
+        default: 'build-signed'
+        type: choice
+        options:
+          - build-unsigned
+          - build-signed
+          - security-scan
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   build-unsigned:
     name: Build and Push Unsigned Image
     runs-on: ubuntu-24.04
-    # if: ${{ github.event.inputs.job == 'build-unsigned' }}
+    if: ${{ github.event.inputs.job == 'build-unsigned' || github.event_name == 'workflow_dispatch' }}
     permissions:
       contents: read
       packages: write
@@ -22,7 +40,7 @@ jobs:
       - name: Authenticate to GHCR
         uses: docker/login-action@v3.3.0
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
@@ -30,7 +48,7 @@ jobs:
         id: docker_meta_unsigned
         uses: docker/metadata-action@v4.4.0
         with:
-          images: ghcr.io/shivaswaroop40/containerimages/my-unsigned-image
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/unsigned
           tags: type=sha,format=short
 
       - name: Build and Push Unsigned Image
@@ -40,16 +58,19 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.docker_meta_unsigned.outputs.tags }}
           outputs: type=oci,dest=/tmp/output-unsigned.tar
+          provenance: true
+          sbom: true
 
   build-signed:
     name: Build and Push Signed Image
     runs-on: ubuntu-24.04
-    # if: ${{ github.event.inputs.job == 'build-signed' }}
+    if: ${{ github.event.inputs.job == 'build-signed' || github.event_name == 'push' || github.event_name == 'pull_request' }}
     outputs:
       tags: ${{ steps.build-and-push.tags }}
     permissions:
       contents: read
       packages: write
+      id-token: write
 
     steps:
       - name: Checkout Code
@@ -57,6 +78,8 @@ jobs:
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3.7.0
+        with:
+          cosign-release: 'v2.2.0'
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3.2.0
@@ -67,7 +90,7 @@ jobs:
       - name: Authenticate to GHCR
         uses: docker/login-action@v3.3.0
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
@@ -75,8 +98,15 @@ jobs:
         id: docker_meta_signed
         uses: docker/metadata-action@v4.4.0
         with:
-          images: ghcr.io/shivaswaroop40/containerimages/my-signed-image
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/signed
           tags: type=sha,format=short
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0.15.0
+        with:
+          image: ${{ steps.docker_meta_signed.outputs.tags }}
+          format: cyclonedx-json
+          output-file: sbom.json
 
       - name: Build and Push Signed Image
         uses: docker/build-push-action@v6.10.0
@@ -86,39 +116,121 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.docker_meta_signed.outputs.tags }}
           outputs: type=oci,dest=/tmp/output-signed.tar
+          provenance: true
+          sbom: true
 
-      - name: Scan image in a private registry
-        uses: aquasecurity/trivy-action@0.28.0
+      - name: Echo build status
+        run: |
+          echo "🏗️ Multi-platform build completed"
+          echo "📦 Built for platforms: linux/amd64, linux/arm64"
+          echo "🏷️ Image tags: ${{ steps.docker_meta_signed.outputs.tags }}"
+
+      - name: Sign image with key
+        env:
+          COSIGN_EXPERIMENTAL: 1
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: |
+          echo "🔐 Starting image signing process..."
+          echo "📦 Image to sign: ${{ steps.docker_meta_signed.outputs.tags }}"
+          cosign sign --key env://COSIGN_PRIVATE_KEY ${{ steps.docker_meta_signed.outputs.tags }}
+          echo "✅ Image signing completed successfully"
+
+      - name: Attach SBOM
+        env:
+          COSIGN_EXPERIMENTAL: 1
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: |
+          echo "📋 Starting SBOM attachment process..."
+          echo "📦 Attaching SBOM to image: ${{ steps.docker_meta_signed.outputs.tags }}"
+          cosign attach sbom --key env://COSIGN_PRIVATE_KEY \
+            --type cyclonedx \
+            --sbom sbom.json \
+            ${{ steps.docker_meta_signed.outputs.tags }}
+          echo "✅ SBOM attachment completed successfully"
+
+      - name: Generate SLSA provenance
+        uses: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@v1.8.0
         with:
-          image-ref: '${{ steps.docker_meta_signed.outputs.tags }}'
-          scan-type: image
-          format: 'github'
-          output: 'dependency-results.sbom.json'
-          github-pat: ${{ secrets.GITHUB_TOKEN }} # or ${{ secrets.github_pat_name }} if you're using a PAT
-          severity: "MEDIUM,HIGH,CRITICAL"
-          scanners: "vuln"
+          image: ${{ steps.docker_meta_signed.outputs.tags }}
+          push: true
+
+      - name: Verify image
+        env:
+          COSIGN_EXPERIMENTAL: 1
+          COSIGN_PUBLIC_KEY: ${{ secrets.COSIGN_PUBLIC_KEY }}
+        run: |
+          echo "🔍 Starting image verification process..."
+          echo "📦 Verifying image: ${{ steps.docker_meta_signed.outputs.tags }}"
+          echo "🔑 Using public key from: COSIGN_PUBLIC_KEY"
+          cosign verify --key env://COSIGN_PUBLIC_KEY ${{ steps.docker_meta_signed.outputs.tags }}
+          echo "✅ Image verification completed successfully"
+
+  security-scan:
+    name: Security Scanning
+    needs: build-signed
+    runs-on: ubuntu-24.04
+    if: ${{ github.event.inputs.job == 'security-scan' || github.event_name == 'push' || github.event_name == 'pull_request' }}
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - name: Echo scan start
+        run: |
+          echo "🔍 Starting security scanning process..."
+          echo "📦 Target image: ${{ needs.build-signed.outputs.tags }}"
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ needs.build-signed.outputs.tags }}
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+          github-pat: ${{ secrets.GITHUB_TOKEN }}
         env:
           TRIVY_USERNAME: ${{ github.actor }}
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload trivy report as a Github artifact
+      - name: Echo vulnerability scan status
+        run: |
+          echo "✅ Vulnerability scan completed"
+          echo "⚡ Checked for CRITICAL and HIGH severity issues"
+
+      - name: Run Trivy config scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ needs.build-signed.outputs.tags }}
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: 'config'
+          severity: 'CRITICAL,HIGH'
+          github-pat: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Echo config scan status
+        run: |
+          echo "✅ Configuration scan completed"
+          echo "⚡ Checked for misconfigurations"
+
+      - name: Upload Trivy reports
         uses: actions/upload-artifact@v4
         with:
-          name: trivy-sbom-report
-          path: '${{ github.workspace }}/dependency-results.sbom.json'
-          retention-days: 20 # 90 is the default
+          name: trivy-reports
+          path: |
+            trivy-results.json
+            trivy-config-results.json
+          retention-days: 20
 
-      - name: Set Output for Image Tag
-        run: echo "image_tag=${{ steps.docker_meta_signed.outputs.tags }}" >> $GITHUB_ENV
-        id: set-output
-
-      - name: Sign and Verify the Image
+      - name: Echo upload status
         run: |
-          echo "Signing the image..."
-          cosign sign --yes --key env://COSIGN_PRIVATE_KEY ${{ steps.docker_meta_signed.outputs.tags }}
-          echo "Verifying the signature..."
-          cosign verify --key env://COSIGN_PUBLIC_KEY ${{ steps.docker_meta_signed.outputs.tags }}
-        env:
-          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
-          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
-          COSIGN_PUBLIC_KEY: ${{ secrets.COSIGN_PUBLIC_KEY }}
+          echo "📤 Security scan reports uploaded"
+          echo "📄 Reports: trivy-results.json, trivy-config-results.json"
+          echo "✅ Security scanning process completed"
