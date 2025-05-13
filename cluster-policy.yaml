@@ -38,8 +38,7 @@ spec:
         - "ghcr.io/shivaswaroop40/containerimages/*"
         attestors:
         - entries:
-          - predicateType: "https://slsa.dev/provenance/v0.2"
-            keys:
+          - keys:
               secret:
                 name: slsa-provenance-key
                 namespace: kyverno
@@ -54,8 +53,7 @@ spec:
         - "ghcr.io/shivaswaroop40/containerimages/*"
         attestors:
         - entries:
-          - predicateType: "https://cyclonedx.org/bom/v1"
-            keys:
+          - keys:
               secret:
                 name: sbom-key
                 namespace: kyverno
@@ -69,17 +67,15 @@ spec:
         message: "Container images must be less than 30 days old"
         foreach:
         - list: "spec.containers"
-          validate:
-            message: "Container {{ element.name }} image must be less than 30 days old"
-            deny:
-              conditions:
-                all:
-                - key: "{{ element.image }}"
-                  operator: Matches
-                  value: "ghcr.io/shivaswaroop40/containerimages/*"
-                - key: "{{ element.image }}"
-                  operator: Matches
-                  value: ".*:latest"
+          deny:
+            conditions:
+              all:
+              - key: "{{ element.image }}"
+                operator: In
+                value: ["ghcr.io/shivaswaroop40/containerimages/*"]
+              - key: "{{ element.image }}"
+                operator: In
+                value: [".*:latest"]
     - name: enforce-digest-pinning
       match:
         any:
@@ -90,7 +86,12 @@ spec:
         message: "Container images must be referenced by digest"
         foreach:
         - list: "spec.containers"
-          validate:
-            message: "Container {{ element.name }} image must be referenced by digest"
-            pattern:
-              image: "ghcr.io/shivaswaroop40/containerimages/*@sha256:*"
+          deny:
+            conditions:
+              all:
+              - key: "{{ element.image }}"
+                operator: In
+                value: ["ghcr.io/shivaswaroop40/containerimages/*"]
+              - key: "{{ element.image }}"
+                operator: NotIn
+                value: [".*@sha256:.*"]
