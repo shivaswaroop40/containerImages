@@ -139,6 +139,7 @@ jobs:
           image: ${{ steps.docker_meta_signed.outputs.tags }}
           format: cyclonedx-json
           output-file: sbom.json
+          artifact-name: sbom-cyclonedx
 
       - name: Attach SBOM
         env:
@@ -160,6 +161,7 @@ jobs:
           name: sbom-cyclonedx
           path: sbom.json
           retention-days: 20
+          if-no-files-found: error
 
       - name: Verify image
         env:
