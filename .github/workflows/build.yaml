@@ -123,36 +123,6 @@ jobs:
             ${{ steps.docker_meta_signed.outputs.tags }}
           echo "✅ Image signing completed successfully"
 
-      # - name: Generate SBOM
-      #   uses: anchore/sbom-action@v0.15.0
-      #   with:
-      #     image: ${{ steps.docker_meta_signed.outputs.tags }}
-      #     format: cyclonedx-json
-      #     output-file: sbom.json
-      #     artifact-name: sbom-cyclonedx
-
-      # - name: Attach SBOM
-      #   env:
-      #     COSIGN_EXPERIMENTAL: 1
-      #     COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
-      #     COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
-      #   run: |
-      #     echo "📋 Starting SBOM attachment process..."
-      #     echo "📦 Attaching SBOM to image: ${{ steps.docker_meta_signed.outputs.tags }}"
-      #     cosign attach sbom --key env://COSIGN_PRIVATE_KEY \
-      #       --type cyclonedx \
-      #       --sbom sbom.json \
-      #       ${{ steps.docker_meta_signed.outputs.tags }}
-      #     echo "✅ SBOM attachment completed successfully"
-
-      # - name: Upload SBOM
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: sbom-cyclonedx
-      #     path: sbom.json
-      #     retention-days: 20
-      #     if-no-files-found: error
-
       - name: Verify image
         env:
           COSIGN_EXPERIMENTAL: 1
@@ -186,19 +156,3 @@ jobs:
       - name: Echo vulnerability scan status
         run: |
           echo "✅ Vulnerability scanning completed"
-
-      - name: Upload Trivy reports
-        uses: actions/upload-artifact@v4
-        with:
-          name: trivy-reports
-          path: |
-            trivy-results.json
-            trivy-config-results.json
-          retention-days: 20
-          if-no-files-found: error
-
-      - name: Echo upload status
-        run: |
-          echo "📤 Security scan reports uploaded"
-          echo "📄 Reports: trivy-results.json, trivy-config-results.json"
-          echo "✅ Security scanning process completed"
