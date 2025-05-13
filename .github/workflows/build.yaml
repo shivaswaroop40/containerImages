@@ -177,6 +177,7 @@ jobs:
       contents: read
       packages: write
       id-token: write
+      actions: read
 
   security-scan:
     name: Security Scanning
