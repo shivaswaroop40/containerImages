@@ -171,8 +171,8 @@ jobs:
       digest: ${{ needs.build-signed.outputs.digest }}
       # slsa-version: v1.0
       # slsa-workflow-recipient: "ghcr.io"
-      slsa-workflow-ref: ${{ github.ref }}
-      slsa-workflow-sha: ${{ github.sha }}
+      # slsa-workflow-ref: ${{ github.ref }}
+      # slsa-workflow-sha: ${{ github.sha }}
     permissions:
       contents: read
       packages: write
