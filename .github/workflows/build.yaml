@@ -67,6 +67,7 @@ jobs:
     if: ${{ github.event.inputs.job == 'build-signed' || github.event_name == 'push' || github.event_name == 'pull_request' }}
     outputs:
       tags: ${{ steps.build-and-push.tags }}
+      digest: ${{ steps.build-and-push.digest }}
     permissions:
       contents: read
       packages: write
@@ -167,7 +168,11 @@ jobs:
     uses: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@v1.8.0
     with:
       image: ${{ needs.build-signed.outputs.tags }}
+      digest: ${{ needs.build-signed.outputs.digest }}
+      registry: ${{ env.REGISTRY }}
       push: true
+      provenance: true
+      sbom: true
     permissions:
       contents: read
       packages: write
