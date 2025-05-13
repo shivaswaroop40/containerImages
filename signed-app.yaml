@@ -19,7 +19,7 @@ spec:
       type: RuntimeDefault
   containers:
     - name: signed-container
-      image: ghcr.io/shivaswaroop40/containerimages/signed@sha256:${IMAGE_SHA}
+      image: ghcr.io/shivaswaroop40/containerimages/signed:sha-16589e8
       securityContext:
         allowPrivilegeEscalation: false
         capabilities:

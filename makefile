@@ -13,8 +13,8 @@ ENVSUBST = envsubst
 POLICY_DIR = policies
 
 # Image names
-SIGNED_IMAGE = $(GHCR)/$(IMAGE_NAME)/signed
-UNSIGNED_IMAGE = $(GHCR)/$(IMAGE_NAME)/unsigned
+SIGNED_IMAGE = $(GHCR)/shivaswaroop40/$(IMAGE_NAME)/signed
+UNSIGNED_IMAGE = $(GHCR)/shivaswaroop40/$(IMAGE_NAME)/unsigned
 
 # Help
 help:
@@ -145,6 +145,8 @@ generate-keys:
 # Cleanup
 clean:
 	@echo "🧹 Cleaning up images..."
+	kubectl delete $(SIGNED_IMAGE):$(TAG) || true
+	kubectl delete $(UNSIGNED_IMAGE):$(TAG) || true
 	docker rmi $(SIGNED_IMAGE):$(TAG) || true
 	docker rmi $(UNSIGNED_IMAGE):$(TAG) || true
 

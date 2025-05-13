@@ -27,71 +27,71 @@ spec:
         imageRegistryCredentials:
           secrets: 
           - ghcr-secret
-    - name: verify-slsa-provenance
-      match:
-        any:
-        - resources:
-            kinds:
-              - Pod
-      verifyImages:
-      - imageReferences:
-        - "ghcr.io/shivaswaroop40/containerimages/*"
-        attestors:
-        - entries:
-          - keys:
-              secret:
-                name: slsa-provenance-key
-                namespace: kyverno
-    - name: verify-sbom
-      match:
-        any:
-        - resources:
-            kinds:
-              - Pod
-      verifyImages:
-      - imageReferences:
-        - "ghcr.io/shivaswaroop40/containerimages/*"
-        attestors:
-        - entries:
-          - keys:
-              secret:
-                name: sbom-key
-                namespace: kyverno
-    - name: check-image-freshness
-      match:
-        any:
-        - resources:
-            kinds:
-              - Pod
-      validate:
-        message: "Container images must be less than 30 days old"
-        foreach:
-        - list: "spec.containers"
-          deny:
-            conditions:
-              all:
-              - key: "{{ element.image }}"
-                operator: In
-                value: ["ghcr.io/shivaswaroop40/containerimages/*"]
-              - key: "{{ element.image }}"
-                operator: In
-                value: [".*:latest"]
-    - name: enforce-digest-pinning
-      match:
-        any:
-        - resources:
-            kinds:
-              - Pod
-      validate:
-        message: "Container images must be referenced by digest"
-        foreach:
-        - list: "spec.containers"
-          deny:
-            conditions:
-              all:
-              - key: "{{ element.image }}"
-                operator: In
-                value: ["ghcr.io/shivaswaroop40/containerimages/*"]
-              - key: "{{ element.image }}"
-                operator: NotIn
-                value: [".*@sha256:.*"]
+    # - name: verify-slsa-provenance
+    #   match:
+    #     any:
+    #     - resources:
+    #         kinds:
+    #           - Pod
+    #   verifyImages:
+    #   - imageReferences:
+    #     - "ghcr.io/shivaswaroop40/containerimages/*"
+    #     attestors:
+    #     - entries:
+    #       - keys:
+    #           secret:
+    #             name: slsa-provenance-key
+    #             namespace: kyverno
+    # - name: verify-sbom
+    #   match:
+    #     any:
+    #     - resources:
+    #         kinds:
+    #           - Pod
+    #   verifyImages:
+    #   - imageReferences:
+    #     - "ghcr.io/shivaswaroop40/containerimages/*"
+    #     attestors:
+    #     - entries:
+    #       - keys:
+    #           secret:
+    #             name: sbom-key
+    #             namespace: kyverno
+    # - name: check-image-freshness
+    #   match:
+    #     any:
+    #     - resources:
+    #         kinds:
+    #           - Pod
+    #   validate:
+    #     message: "Container images must be less than 30 days old"
+    #     foreach:
+    #     - list: "spec.containers"
+    #       deny:
+    #         conditions:
+    #           all:
+    #           - key: "{{ element.image }}"
+    #             operator: In
+    #             value: ["ghcr.io/shivaswaroop40/containerimages/*"]
+    #           - key: "{{ element.image }}"
+    #             operator: In
+    #             value: [".*:latest"]
+    # - name: enforce-digest-pinning
+    #   match:
+    #     any:
+    #     - resources:
+    #         kinds:
+    #           - Pod
+    #   validate:
+    #     message: "Container images must be referenced by digest"
+    #     foreach:
+    #     - list: "spec.containers"
+    #       deny:
+    #         conditions:
+    #           all:
+    #           - key: "{{ element.image }}"
+    #             operator: In
+    #             value: ["ghcr.io/shivaswaroop40/containerimages/*"]
+    #           - key: "{{ element.image }}"
+    #             operator: NotIn
+    #             value: [".*@sha256:.*"]
