@@ -13,8 +13,11 @@ LABEL org.opencontainers.image.source="https://github.com/shivaswaroop40/contain
 LABEL org.opencontainers.image.description="Secure container image with supply chain security"
 LABEL org.opencontainers.image.licenses="MIT"
 
-# Create non-root user
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+# Create non-root user (using Busybox compatible commands)
+RUN echo "appuser:x:1000:1000:appuser:/home/appuser:/bin/sh" >> /etc/passwd && \
+    echo "appuser:x:1000:" >> /etc/group && \
+    mkdir -p /home/appuser && \
+    chown -R appuser:appuser /home/appuser
 
 # Set working directory
 WORKDIR /app
@@ -23,7 +26,7 @@ WORKDIR /app
 COPY --from=builder /app .
 
 # Set proper permissions
-RUN chown -R appuser:appgroup /app
+RUN chown -R appuser:appuser /app
 
 # Switch to non-root user
 USER appuser
