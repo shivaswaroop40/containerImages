@@ -178,7 +178,6 @@ jobs:
           ignore-unfixed: true
           vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
-          scanners: 'vuln'
           github-pat: ${{ secrets.GITHUB_TOKEN }}
         env:
           TRIVY_USERNAME: ${{ github.actor }}
@@ -186,7 +185,7 @@ jobs:
 
       - name: Echo vulnerability scan status
         run: |
-          echo "✅ Security scanning completed"
+          echo "✅ Vulnerability scanning completed"
 
       - name: Run Trivy config scanner
         uses: aquasecurity/trivy-action@master
@@ -197,7 +196,6 @@ jobs:
           ignore-unfixed: true
           vuln-type: 'config'
           severity: 'CRITICAL,HIGH'
-          scanners: 'config'
           github-pat: ${{ secrets.GITHUB_TOKEN }}
         env:
           TRIVY_USERNAME: ${{ github.actor }}
