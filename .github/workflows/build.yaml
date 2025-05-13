@@ -169,8 +169,8 @@ jobs:
     with:
       image: ${{ needs.build-signed.outputs.tags }}
       digest: ${{ needs.build-signed.outputs.digest }}
-      slsa-version: v1.0
-      slsa-workflow-recipient: "ghcr.io"
+      # slsa-version: v1.0
+      # slsa-workflow-recipient: "ghcr.io"
       slsa-workflow-ref: ${{ github.ref }}
       slsa-workflow-sha: ${{ github.sha }}
     permissions:
