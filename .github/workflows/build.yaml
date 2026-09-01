@@ -1,21 +1,20 @@
 name: Build and Secure Container Images
 
 on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "README.md"
+      - "LICENSE"
   workflow_dispatch:
-  # push:
-  #   branches: [ main ]
-  # pull_request:
-  #   branches: [ main ]
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   build-unsigned:
     name: Build and Push Unsigned Image
     runs-on: ubuntu-24.04
-    if: ${{ github.event.inputs.job == 'build-unsigned' || github.event_name == 'workflow_dispatch' || github.event_name == 'push'}}
     permissions:
       contents: read
       packages: write
@@ -24,135 +23,145 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3.8.0
+        uses: docker/setup-buildx-action@v3
 
       - name: Authenticate to GHCR
-        uses: docker/login-action@v3.3.0
+        uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Generate Metadata for Unsigned Image
-        id: docker_meta_unsigned
-        uses: docker/metadata-action@v4.4.0
+        id: meta
+        uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/unsigned
+          images: ${{ env.REGISTRY }}/${{ github.repository }}/unsigned
           tags: type=sha,format=short
 
+      # No provenance and no SBOM on purpose: this image exists so the
+      # Kyverno policy has something to reject.
       - name: Build and Push Unsigned Image
-        uses: docker/build-push-action@v6.10.0
+        uses: docker/build-push-action@v6
         with:
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.docker_meta_unsigned.outputs.tags }}
-          outputs: type=oci,dest=/tmp/output-unsigned.tar
-          provenance: true
-          sbom: true
+          tags: ${{ steps.meta.outputs.tags }}
+          provenance: false
+          sbom: false
 
-  build-signed:
-    name: Build and Push Signed Image
+  build-sign-verify:
+    name: Build, Scan, Sign and Verify Image
     runs-on: ubuntu-24.04
-    if: ${{ github.event.inputs.job == 'build-signed' || github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
-    outputs:
-      tags: ${{ steps.build-and-push.tags }}
-      digest: ${{ steps.build-and-push.digest }}
     permissions:
       contents: read
       packages: write
-      id-token: write
+      id-token: write # keyless Cosign signing via GitHub OIDC
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@v3.7.0
-        with:
-          cosign-release: 'v2.2.0'
+        uses: sigstore/cosign-installer@v3
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3.2.0
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3.8.0
+        uses: docker/setup-buildx-action@v3
 
       - name: Authenticate to GHCR
-        uses: docker/login-action@v3.3.0
+        uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Registry paths must be lowercase; github.repository is not.
+      - name: Compute Image Name
+        id: image
+        run: echo "name=${REGISTRY}/${GITHUB_REPOSITORY,,}/signed" >> "$GITHUB_OUTPUT"
+
       - name: Generate Metadata for Signed Image
-        id: docker_meta_signed
-        uses: docker/metadata-action@v4.4.0
+        id: meta
+        uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/signed
+          images: ${{ steps.image.outputs.name }}
           tags: type=sha,format=short
 
       - name: Build and Push Signed Image
-        uses: docker/build-push-action@v6.10.0
-        id: build-and-push
+        id: build
+        uses: docker/build-push-action@v6
         with:
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.docker_meta_signed.outputs.tags }}
-          outputs: type=oci,dest=/tmp/output-signed.tar
-          provenance: true
+          tags: ${{ steps.meta.outputs.tags }}
+          provenance: mode=max
           sbom: true
 
-      - name: Echo build status
-        run: |
-          echo "🏗️ Multi-platform build completed"
-          echo "📦 Built for platforms: linux/amd64, linux/arm64"
-          echo "🏷️ Image tags: ${{ steps.docker_meta_signed.outputs.tags }}"
-
-      - name: Sign image with key
-        env:
-          COSIGN_EXPERIMENTAL: 1
-          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
-          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
-        run: |
-          echo "🔐 Starting image signing process..."
-          echo "📦 Image to sign: ${{ steps.docker_meta_signed.outputs.tags }}"
-          cosign sign --yes --key env://COSIGN_PRIVATE_KEY \
-            --tlog-upload=true \
-            --allow-insecure-registry=false \
-            ${{ steps.docker_meta_signed.outputs.tags }}
-          echo "✅ Image signing completed successfully"
-
-      - name: Verify image
-        env:
-          COSIGN_EXPERIMENTAL: 1
-          COSIGN_PUBLIC_KEY: ${{ secrets.COSIGN_PUBLIC_KEY }}
-        run: |
-          echo "🔍 Starting image verification process..."
-          echo "📦 Verifying image: ${{ steps.docker_meta_signed.outputs.tags }}"
-          echo "🔑 Using public key from: COSIGN_PUBLIC_KEY"
-          cosign verify --key env://COSIGN_PUBLIC_KEY ${{ steps.docker_meta_signed.outputs.tags }}
-          echo "✅ Image verification completed successfully"
-
-      - name: Echo scan start
-        run: |
-          echo "🔍 Starting security scanning process..."
-          echo "📦 Target image: ${{ steps.docker_meta_signed.outputs.tags }}"
-
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
+      # Scan BEFORE signing: a signature is a statement that the image is fit
+      # to run, so nothing gets signed until Trivy is happy. The scan targets
+      # the immutable digest, not the tag.
+      - name: Scan Image with Trivy
+        uses: aquasecurity/trivy-action@0.28.0
         with:
-          image-ref: ${{ steps.docker_meta_signed.outputs.tags }}
-          format: 'table'
-          exit-code: '1'
+          image-ref: ${{ steps.image.outputs.name }}@${{ steps.build.outputs.digest }}
+          format: table
+          exit-code: "1"
           ignore-unfixed: true
-          vuln-type: 'os,library'
-          severity: 'CRITICAL,HIGH'
-          github-pat: ${{ secrets.GITHUB_TOKEN }}
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
         env:
           TRIVY_USERNAME: ${{ github.actor }}
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Echo vulnerability scan status
+      - name: Generate SBOM with Trivy
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ steps.image.outputs.name }}@${{ steps.build.outputs.digest }}
+          format: cyclonedx
+          output: sbom.cdx.json
+        env:
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload SBOM Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.cdx.json
+
+      # Keyless: Cosign gets a short-lived certificate from Fulcio bound to
+      # this workflow's OIDC identity and logs it in Rekor. No key secrets.
+      # Signing the digest, never the tag - tags are mutable.
+      - name: Sign Image (Keyless)
+        run: cosign sign --yes "${{ steps.image.outputs.name }}@${{ steps.build.outputs.digest }}"
+
+      - name: Attest SBOM (Keyless)
         run: |
-          echo "✅ Vulnerability scanning completed"
+          cosign attest --yes \
+            --type cyclonedx \
+            --predicate sbom.cdx.json \
+            "${{ steps.image.outputs.name }}@${{ steps.build.outputs.digest }}"
+
+      - name: Verify Signature
+        run: |
+          cosign verify \
+            --certificate-identity-regexp "^https://github.com/${{ github.repository }}/\.github/workflows/build\.yaml@" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "${{ steps.image.outputs.name }}@${{ steps.build.outputs.digest }}"
+
+      - name: Verify SBOM Attestation
+        run: |
+          cosign verify-attestation \
+            --type cyclonedx \
+            --certificate-identity-regexp "^https://github.com/${{ github.repository }}/\.github/workflows/build\.yaml@" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "${{ steps.image.outputs.name }}@${{ steps.build.outputs.digest }}"

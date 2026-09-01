@@ -8,90 +8,74 @@ spec:
   webhookTimeoutSeconds: 30
   failurePolicy: Fail
   rules:
-    - name: check-image
+    # Every image from this registry namespace must carry a keyless Cosign
+    # signature produced by the build workflow on main. The unsigned image
+    # fails here - that is the demo. mutateDigest rewrites the tag to the
+    # verified digest, which also satisfies the require-digest rule below.
+    - name: verify-signature
       match:
         any:
-        - resources:
-            kinds:
-              - Pod
+          - resources:
+              kinds:
+                - Pod
       verifyImages:
-      - imageReferences: 
-        - "ghcr.io/shivaswaroop40/containerimages/*"
-        mutateDigest: true
-        attestors:
-        - entries:
-          - keys:
-              secret:
-                name: cosign-public-key
-                namespace: kyverno
-        imageRegistryCredentials:
-          secrets: 
-          - ghcr-secret
-    # - name: verify-slsa-provenance
-    #   match:
-    #     any:
-    #     - resources:
-    #         kinds:
-    #           - Pod
-    #   verifyImages:
-    #   - imageReferences:
-    #     - "ghcr.io/shivaswaroop40/containerimages/*"
-    #     attestors:
-    #     - entries:
-    #       - keys:
-    #           secret:
-    #             name: slsa-provenance-key
-    #             namespace: kyverno
-    # - name: verify-sbom
-    #   match:
-    #     any:
-    #     - resources:
-    #         kinds:
-    #           - Pod
-    #   verifyImages:
-    #   - imageReferences:
-    #     - "ghcr.io/shivaswaroop40/containerimages/*"
-    #     attestors:
-    #     - entries:
-    #       - keys:
-    #           secret:
-    #             name: sbom-key
-    #             namespace: kyverno
-    # - name: check-image-freshness
-    #   match:
-    #     any:
-    #     - resources:
-    #         kinds:
-    #           - Pod
-    #   validate:
-    #     message: "Container images must be less than 30 days old"
-    #     foreach:
-    #     - list: "spec.containers"
-    #       deny:
-    #         conditions:
-    #           all:
-    #           - key: "{{ element.image }}"
-    #             operator: In
-    #             value: ["ghcr.io/shivaswaroop40/containerimages/*"]
-    #           - key: "{{ element.image }}"
-    #             operator: In
-    #             value: [".*:latest"]
-    # - name: enforce-digest-pinning
-    #   match:
-    #     any:
-    #     - resources:
-    #         kinds:
-    #           - Pod
-    #   validate:
-    #     message: "Container images must be referenced by digest"
-    #     foreach:
-    #     - list: "spec.containers"
-    #       deny:
-    #         conditions:
-    #           all:
-    #           - key: "{{ element.image }}"
-    #             operator: In
-    #             value: ["ghcr.io/shivaswaroop40/containerimages/*"]
-    #           - key: "{{ element.image }}"
-    #             operator: NotIn
-    #             value: [".*@sha256:.*"]
+        - imageReferences:
+            - "ghcr.io/shivaswaroop40/containerimages/*"
+          mutateDigest: true
+          attestors:
+            - entries:
+                - keyless:
+                    subject: "https://github.com/shivaswaroop40/containerImages/.github/workflows/build.yaml@refs/heads/main"
+                    issuer: "https://token.actions.githubusercontent.com"
+                    rekor:
+                      url: https://rekor.sigstore.dev
+          imageRegistryCredentials:
+            secrets:
+              - ghcr-secret
+
+    # The signed image must also carry a CycloneDX SBOM attestation from the
+    # same workflow identity.
+    - name: verify-sbom-attestation
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      verifyImages:
+        - imageReferences:
+            - "ghcr.io/shivaswaroop40/containerimages/signed*"
+          attestations:
+            - type: https://cyclonedx.org/bom
+              attestors:
+                - entries:
+                    - keyless:
+                        subject: "https://github.com/shivaswaroop40/containerImages/.github/workflows/build.yaml@refs/heads/main"
+                        issuer: "https://token.actions.githubusercontent.com"
+                        rekor:
+                          url: https://rekor.sigstore.dev
+          imageRegistryCredentials:
+            secrets:
+              - ghcr-secret
+
+    # Belt and braces: anything from this registry namespace that reaches
+    # validation without a digest is rejected. verifyImages mutates tags to
+    # digests first, so this only fires when verification was bypassed.
+    - name: require-digest
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      validate:
+        message: "Images from ghcr.io/shivaswaroop40/containerimages must be pinned by digest."
+        foreach:
+          - list: "request.object.spec.containers"
+            deny:
+              conditions:
+                all:
+                  - key: "{{ regex_match('^ghcr\\.io/shivaswaroop40/containerimages/.*', element.image) }}"
+                    operator: Equals
+                    value: true
+                  - key: "{{ contains(element.image, '@sha256:') }}"
+                    operator: Equals
+                    value: false

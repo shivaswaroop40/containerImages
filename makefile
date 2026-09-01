@@ -4,13 +4,14 @@ COSIGN = cosign
 TRIVY = trivy
 GHCR = ghcr.io
 IMAGE_NAME = containerimages
-TAG ?= $(shell git rev-parse --short HEAD)
+TAG ?= sha-$(shell git rev-parse --short HEAD)
 PLATFORMS ?= linux/amd64,linux/arm64
-COSIGN_PRIVATE_KEY ?= $(error COSIGN_PRIVATE_KEY is not set)
-COSIGN_PUBLIC_KEY ?= $(error COSIGN_PUBLIC_KEY is not set)
 KUBECTL = kubectl
 ENVSUBST = envsubst
-POLICY_DIR = policies
+
+# Keyless verification: the workflow identity that is allowed to sign.
+CERT_IDENTITY_REGEXP ?= ^https://github.com/shivaswaroop40/containerImages/.github/workflows/build.yaml@
+CERT_OIDC_ISSUER ?= https://token.actions.githubusercontent.com
 
 # Image names
 SIGNED_IMAGE = $(GHCR)/shivaswaroop40/$(IMAGE_NAME)/signed
@@ -19,138 +20,98 @@ UNSIGNED_IMAGE = $(GHCR)/shivaswaroop40/$(IMAGE_NAME)/unsigned
 # Help
 help:
 	@echo "Available targets:"
-	@echo "  all              - Build, push, scan, and sign both images"
-	@echo "  build-signed     - Build signed image"
-	@echo "  build-unsigned   - Build unsigned image"
-	@echo "  push-signed      - Push signed image"
-	@echo "  push-unsigned    - Push unsigned image"
-	@echo "  scan-signed      - Scan signed image"
-	@echo "  scan-unsigned    - Scan unsigned image"
-	@echo "  sign             - Sign the image"
-	@echo "  verify           - Verify the image signature"
-	@echo "  deploy-signed    - Deploy signed pod (use: make deploy-signed TAG=<sha>)"
-	@echo "  deploy-unsigned  - Deploy unsigned pod (use: make deploy-unsigned TAG=<sha>)"
-	@echo "  clean            - Clean up images"
-	@echo "  get-latest-sha   - Get the latest image SHA from registry"
-	@echo "  policy-create    - Create cluster policy"
-	@echo "  policy-verify    - Verify cluster policy"
-	@echo "  policy-cleanup   - Remove cluster policy"
+	@echo "  all              - Build, push, scan, sign, and verify both images"
+	@echo "  build-signed     - Build and push the signed image (multi-arch)"
+	@echo "  build-unsigned   - Build and push the unsigned image (multi-arch)"
+	@echo "  scan-signed      - Scan signed image with Trivy"
+	@echo "  scan-unsigned    - Scan unsigned image with Trivy"
+	@echo "  sign             - Sign the image (keyless; opens a browser for OIDC)"
+	@echo "  verify           - Verify the image signature (keyless)"
+	@echo "  deploy-signed    - Deploy signed pod (use: make deploy-signed TAG=sha-<sha>)"
+	@echo "  deploy-unsigned  - Deploy unsigned pod (use: make deploy-unsigned TAG=sha-<sha>)"
+	@echo "  get-digest       - Print the manifest digest for the current TAG"
+	@echo "  clean            - Delete demo pods and local images"
+	@echo "  policy-create    - Apply the Kyverno cluster policy"
+	@echo "  policy-verify    - Check the cluster policy status"
+	@echo "  policy-cleanup   - Remove the cluster policy"
 
-# Get latest SHA from registry
-get-latest-sha:
-	@echo "🔍 Fetching latest image SHA..."
-	@echo "Latest SHA for signed image:"
-	@docker manifest inspect $(SIGNED_IMAGE):latest 2>/dev/null | grep -o '"digest":"sha256:[^"]*"' | head -n1 | cut -d'"' -f4 || echo "No signed image found"
-	@echo "Latest SHA for unsigned image:"
-	@docker manifest inspect $(UNSIGNED_IMAGE):latest 2>/dev/null | grep -o '"digest":"sha256:[^"]*"' | head -n1 | cut -d'"' -f4 || echo "No unsigned image found"
+# Print the digest for the current TAG (sign and verify by digest, not tag)
+get-digest:
+	@echo "Signed image digest for $(TAG):"
+	@docker buildx imagetools inspect $(SIGNED_IMAGE):$(TAG) --format '{{json .Manifest.Digest}}' 2>/dev/null || echo "No signed image found for tag $(TAG)"
+	@echo "Unsigned image digest for $(TAG):"
+	@docker buildx imagetools inspect $(UNSIGNED_IMAGE):$(TAG) --format '{{json .Manifest.Digest}}' 2>/dev/null || echo "No unsigned image found for tag $(TAG)"
 
-# Build targets
+# Build targets. Multi-arch images cannot be loaded into the local Docker
+# daemon, so build and push are one step.
 build-signed:
-	@echo "🔨 Building signed image..."
-	@echo "Using tag: $(TAG)"
-	$(DOCKER_BUILDX) --platform $(PLATFORMS) -t $(SIGNED_IMAGE):$(TAG) .
+	@echo "Building and pushing signed image with tag: $(TAG)"
+	$(DOCKER_BUILDX) --platform $(PLATFORMS) -t $(SIGNED_IMAGE):$(TAG) --push .
 
 build-unsigned:
-	@echo "🔨 Building unsigned image..."
-	@echo "Using tag: $(TAG)"
-	$(DOCKER_BUILDX) --platform $(PLATFORMS) -t $(UNSIGNED_IMAGE):$(TAG) .
-
-# Push targets
-push-signed:
-	@echo "⬆️ Pushing signed image..."
-	@echo "Pushing with tag: $(TAG)"
-	docker push $(SIGNED_IMAGE):$(TAG)
-
-push-unsigned:
-	@echo "⬆️ Pushing unsigned image..."
-	@echo "Pushing with tag: $(TAG)"
-	docker push $(UNSIGNED_IMAGE):$(TAG)
+	@echo "Building and pushing unsigned image with tag: $(TAG)"
+	$(DOCKER_BUILDX) --platform $(PLATFORMS) -t $(UNSIGNED_IMAGE):$(TAG) --push .
 
 # Scan targets
 scan-signed:
-	@echo "🔍 Scanning signed image..."
-	@echo "Scanning image with tag: $(TAG)"
+	@echo "Scanning signed image with tag: $(TAG)"
 	$(TRIVY) image --severity MEDIUM,HIGH,CRITICAL $(SIGNED_IMAGE):$(TAG)
 
 scan-unsigned:
-	@echo "🔍 Scanning unsigned image..."
-	@echo "Scanning image with tag: $(TAG)"
+	@echo "Scanning unsigned image with tag: $(TAG)"
 	$(TRIVY) image --severity MEDIUM,HIGH,CRITICAL $(UNSIGNED_IMAGE):$(TAG)
 
-# Signing targets
+# Signing targets. Keyless: cosign opens a browser to get a short-lived
+# certificate from Fulcio and records it in Rekor. Signs the digest that the
+# tag currently resolves to.
 sign:
-	@echo "🔐 Signing image..."
-	@echo "Signing image with tag: $(TAG)"
-	$(COSIGN) sign --key $(COSIGN_PRIVATE_KEY) $(SIGNED_IMAGE):$(TAG)
+	@echo "Signing image (keyless) for tag: $(TAG)"
+	$(COSIGN) sign --yes $(SIGNED_IMAGE):$(TAG)
 
 verify:
-	@echo "✅ Verifying image signature..."
-	@echo "Verifying image with tag: $(TAG)"
-	$(COSIGN) verify --key $(COSIGN_PUBLIC_KEY) $(SIGNED_IMAGE):$(TAG)
+	@echo "Verifying image signature (keyless) for tag: $(TAG)"
+	$(COSIGN) verify \
+		--certificate-identity-regexp "$(CERT_IDENTITY_REGEXP)" \
+		--certificate-oidc-issuer "$(CERT_OIDC_ISSUER)" \
+		$(SIGNED_IMAGE):$(TAG)
 
-# Deployment targets
+# Deployment targets. The manifests reference ${IMAGE_SHA}, substituted here.
 deploy-signed:
-	@echo "🚀 Deploying signed pod..."
-	@echo "Using image tag: $(TAG)"
-	@if [ -z "$(TAG)" ]; then \
-		echo "Error: TAG is not set. Please run: make deploy-signed TAG=<sha>"; \
-		exit 1; \
-	fi
+	@echo "Deploying signed pod with tag: $(TAG)"
 	IMAGE_SHA=$(TAG) $(ENVSUBST) < signed-app.yaml | $(KUBECTL) apply -f -
 
 deploy-unsigned:
-	@echo "🚀 Deploying unsigned pod..."
-	@echo "Using image tag: $(TAG)"
-	@if [ -z "$(TAG)" ]; then \
-		echo "Error: TAG is not set. Please run: make deploy-unsigned TAG=<sha>"; \
-		exit 1; \
-	fi
+	@echo "Deploying unsigned pod with tag: $(TAG)"
 	IMAGE_SHA=$(TAG) $(ENVSUBST) < unsigned-app.yaml | $(KUBECTL) apply -f -
 
 # Policy targets
 policy-create:
-	@echo "📝 Creating cluster policy..."
-	@if [ ! -d "$(POLICY_DIR)" ]; then \
-		mkdir -p $(POLICY_DIR); \
-	fi
-	@echo "🔍 Checking if Kyverno is installed..."
+	@echo "Checking that Kyverno is installed..."
 	@if ! $(KUBECTL) get ns kyverno >/dev/null 2>&1; then \
-		echo "❌ Kyverno namespace not found. Please install Kyverno first."; \
+		echo "Kyverno namespace not found. Install Kyverno first."; \
 		exit 1; \
 	fi
-	@echo "📄 Applying cluster policy..."
 	$(KUBECTL) apply -f cluster-policy.yaml
-	@echo "✅ Cluster policy created successfully"
 
 policy-verify:
-	@echo "🔍 Verifying cluster policy..."
 	@if ! $(KUBECTL) get clusterpolicy check-image >/dev/null 2>&1; then \
-		echo "❌ Cluster policy not found"; \
+		echo "Cluster policy not found"; \
 		exit 1; \
 	fi
-	@echo "📊 Policy status:"
 	$(KUBECTL) get clusterpolicy check-image -o yaml | grep -A 5 "status:"
-	@echo "✅ Cluster policy verification completed"
 
 policy-cleanup:
-	@echo "🧹 Cleaning up cluster policy..."
 	$(KUBECTL) delete -f cluster-policy.yaml || true
-	@echo "✅ Cluster policy cleanup completed"
-
-# Generate keys
-generate-keys:
-	@echo "🔑 Generating Cosign key pair..."
-	$(COSIGN) generate-key-pair
 
 # Cleanup
 clean:
-	@echo "🧹 Cleaning up images..."
-	kubectl delete $(SIGNED_IMAGE):$(TAG) || true
-	kubectl delete $(UNSIGNED_IMAGE):$(TAG) || true
-	docker rmi $(SIGNED_IMAGE):$(TAG) || true
-	docker rmi $(UNSIGNED_IMAGE):$(TAG) || true
+	@echo "Deleting demo pods and local images..."
+	$(KUBECTL) delete pod signed-image-pod --ignore-not-found
+	$(KUBECTL) delete pod unsigned-image-pod --ignore-not-found
+	docker rmi $(SIGNED_IMAGE):$(TAG) 2>/dev/null || true
+	docker rmi $(UNSIGNED_IMAGE):$(TAG) 2>/dev/null || true
 
 # Default target
-all: build-signed build-unsigned push-signed push-unsigned scan-signed scan-unsigned sign verify
+all: build-signed build-unsigned scan-signed scan-unsigned sign verify
 
-.PHONY: all help build-signed build-unsigned push-signed push-unsigned scan-signed scan-unsigned sign verify deploy-signed deploy-unsigned generate-keys clean get-latest-sha policy-create policy-verify policy-cleanup
+.PHONY: all help build-signed build-unsigned scan-signed scan-unsigned sign verify deploy-signed deploy-unsigned clean get-digest policy-create policy-verify policy-cleanup

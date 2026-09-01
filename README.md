@@ -1,136 +1,99 @@
-# GitHub Actions: Build, Scan, and Sign Docker Images
+# containerImages
 
-This workflow automates the **building**, **scanning**, and **signing** of container images using **GitHub Actions**.
+A container supply-chain pipeline you can copy: build, scan, sign, verify, and
+then have the cluster refuse to run anything that skipped the process.
 
-## 📌 Overview
-1. **Build and Push Unsigned Image**: Creates a Docker image and pushes it to GHCR.
-2. **Build and Push Signed Image**: Builds a signed container image using Cosign.
-3. **Scan Image for Vulnerabilities**: Uses Trivy to detect security issues.
-4. **Sign and Verify Image**: Ensures authenticity with Cosign.
+Two images get built from the same Dockerfile. One goes through the full
+pipeline and comes out signed with an SBOM attached. The other is pushed as-is.
+A Kyverno policy at admission lets the first one run and rejects the second.
+That rejection is the whole demo.
 
----
+I built this for my talk at the Stockholm Cloud Native meetup
+([slides](https://github.com/shivaswaroop40/containerImages/releases/download/talk-slides/CNCF.pdf))
+and kept using it afterwards.
 
-## 🚀 Stages Explained
+## The pipeline
 
-### 🔨 Build and Push Unsigned Image
-- Uses **Docker Buildx** to build a multi-platform image.
-- Pushes an **unsigned** image to GitHub Container Registry (GHCR).
+Every push to `main` runs [build.yaml](.github/workflows/build.yaml):
 
-#### **Key Workflow Steps:**
-1. Checkout repository code.
-2. Set up **Docker Buildx**.
-3. Authenticate to **GHCR**.
-4. Generate metadata (tags) for the image.
-5. Build and push the **unsigned** image.
+1. **Build** a multi-arch image (amd64 + arm64) with Buildx and push to GHCR,
+   with BuildKit provenance set to `mode=max`.
+2. **Scan** the pushed digest with Trivy. CRITICAL or HIGH findings fail the
+   job, so a vulnerable image never gets a signature.
+3. **Generate an SBOM** (CycloneDX) with Trivy and upload it as a workflow
+   artifact.
+4. **Sign the digest** with Cosign, keyless. GitHub's OIDC token gets exchanged
+   for a short-lived Fulcio certificate, and the signature lands in the Rekor
+   transparency log. No key secrets anywhere in the repo.
+5. **Attest the SBOM** against the same digest, keyless again.
+6. **Verify** both the signature and the attestation before the job goes green.
 
----
+Two details carry most of the security value:
 
-### 🔏 Build and Push Signed Image
-- Builds and signs the image using **Cosign**.
-- Supports **linux/amd64** and **linux/arm64** platforms.
-- Stores the signed image in **GHCR**.
+- Everything downstream of the build refers to the image by digest. Tags are
+  mutable; a signature on a tag is a signature on whatever the tag points at
+  today.
+- Scanning happens before signing. The signature means "this image passed",
+  and once something is in Rekor it is there forever.
 
-#### **Key Workflow Steps:**
-1. Install **Cosign** for signing images.
-2. Enable **QEMU** for multi-platform support.
-3. Set up **Docker Buildx**.
-4. Authenticate to **GHCR**.
-5. Generate metadata (tags) for the image.
-6. Build and push the **signed** image.
+## Enforcement
 
----
+[cluster-policy.yaml](cluster-policy.yaml) is a Kyverno `ClusterPolicy` with
+three rules:
 
-### 🛡️ Scan Image for Vulnerabilities (Trivy)
-- Uses [Aqua Security's Trivy](https://github.com/aquasecurity/trivy) to scan for vulnerabilities.
-- Supports severity levels **MEDIUM, HIGH, CRITICAL**.
-- Generates a Software Bill of Materials (SBOM) report.
+- `verify-signature`: any Pod using an image from
+  `ghcr.io/shivaswaroop40/containerimages/*` must carry a keyless signature
+  from this repo's build workflow on `main`. Kyverno checks the Fulcio
+  identity, so a signature from any other repo or workflow fails. It also
+  rewrites the tag to the verified digest (`mutateDigest`).
+- `verify-sbom-attestation`: the signed image must also carry a CycloneDX
+  attestation from the same identity.
+- `require-digest`: anything from this registry namespace still referenced by
+  bare tag at validation time is rejected.
 
-#### **Key Workflow Steps:**
-1. Authenticate using GitHub credentials.
-2. Scan the **signed image**.
-3. Upload the **SBOM report** as a GitHub artifact.
+## Try it
 
----
+You need a cluster with [Kyverno](https://kyverno.io/docs/installation/)
+installed, plus a `ghcr-secret` image pull secret in the `kyverno` namespace.
 
-### 🔐 Sign and Verify Image (Cosign)
-- Uses [Cosign](https://github.com/sigstore/cosign) to sign and verify the image.
-- Ensures the container image is **trusted and secure** before deployment.
+```sh
+make policy-create                  # apply the ClusterPolicy
+make deploy-signed TAG=sha-<sha>    # admitted, tag mutated to digest
+make deploy-unsigned TAG=sha-<sha>  # rejected by the policy
+```
 
-#### **Key Workflow Steps:**
-1. **Sign the image** using `cosign sign`.
-2. **Verify the signature** using `cosign verify`.
+Grab a valid `<sha>` from the tags on the
+[GHCR packages](https://github.com/shivaswaroop40?tab=packages&repo_name=containerImages),
+or check digests with `make get-digest`.
 
-#### **Inputs & Secrets:**
-| Name                | Description                                   |
-|---------------------|----------------------------------------------|
-| `COSIGN_PRIVATE_KEY` | Private key used for signing.               |
-| `COSIGN_PASSWORD`    | Password to unlock the private key.         |
-| `COSIGN_PUBLIC_KEY`  | Public key for verifying the signature.     |
+Verifying an image locally takes one command and no keys:
 
----
+```sh
+cosign verify \
+  --certificate-identity-regexp '^https://github.com/shivaswaroop40/containerImages/.github/workflows/build.yaml@' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/shivaswaroop40/containerimages/signed@sha256:<digest>
+```
 
-## 📌 How to Use This Workflow
-1. Ensure you have the required **secrets** set up in your GitHub repository:
-   - `GITHUB_TOKEN`
-   - `COSIGN_PRIVATE_KEY`
-   - `COSIGN_PUBLIC_KEY`
-   - `COSIGN_PASSWORD`
-2. Push a Docker image to a private registry.
-3. Trigger the GitHub Action.
-4. View Trivy results under **GitHub Actions → Artifacts**.
-5. Verify that the image is signed successfully.
+The [makefile](makefile) also has targets for local builds, scans, and keyless
+signing (`make help` lists them). Local `make sign` opens a browser for the
+OIDC flow and signs with your own identity, so images signed that way will not
+pass the cluster policy. Good for experiments, not for the demo.
 
----
+## Tools
 
-## 🛠️ Troubleshooting
-- **Build fails**: Ensure `GHCR` authentication is correctly configured.
-- **Trivy scan issues**: Check if the correct image tag is used.
-- **Cosign verification fails**: Verify that the correct **public key** is used.
+- [Docker Buildx](https://docs.docker.com/buildx/working-with-buildx/), multi-arch builds
+- [Cosign](https://docs.sigstore.dev/cosign/overview/) + [Sigstore](https://www.sigstore.dev/) (Fulcio, Rekor), keyless signing
+- [Trivy](https://aquasecurity.github.io/trivy/), vulnerability scanning and SBOM generation
+- [Kyverno](https://kyverno.io/), admission-time enforcement
+- [GHCR](https://ghcr.io), the registry
 
-For any issues, refer to:
-- [Trivy Documentation](https://aquasecurity.github.io/trivy/)
-- [Cosign Documentation](https://docs.sigstore.dev/cosign/overview/)
+Issues and PRs welcome.
 
----
+## Contact
 
-## 📢 Additional Notes
-- This workflow supports **multi-platform builds**.
-- Trivy can scan for **misconfigurations, secrets, and licenses**.
-- Cosign integrates with **Sigstore** for keyless signing.
+- Email: shivaswaroop40@gmail.com
+- LinkedIn: [Shiva Swaroop N K](https://www.linkedin.com/in/shivaswaroop-nittoor-krishnamurthy-67551a14b/)
+- X: [@podsandkapi](https://x.com/podsandkapi)
 
-This workflow ensures that your container images are **secure, signed, and verifiable** before deployment. ✅
-
-## Example Commands
-### Verify Image Locally
-
-Use Cosign to verify a signed image:
-
-    cosign verify --key <path-to-public-key> ghcr.io/shivaswaroop40/containerimages/my-signed-image 
-
-### Tools Used
-
-- Docker Buildx • Advanced Docker builds with multi-platform support.
-
-- Cosign • Sign and verify container images to enhance security.
-
-- GHCR • GitHub-hosted container registry for Docker images.
-Feedback and Contributions
-
-- Trivy: Container Security Tool
-
-We welcome your feedback and contributions!
-
-- Open issues to suggest improvements or report problems.
-- Submit pull requests to enhance the workflow.
-
-### Link to my presentation: [CNCF](/CNCF.pdf)
-
-Contact
-
-Feel free to reach out for questions or collaboration opportunities!
-
-Email: shivaswaroop40@gmail.com
-
-LinkedIn: [Shiva Swaroop N K](https://www.linkedin.com/in/shivaswaroop-nittoor-krishnamurthy-67551a14b/)
-
-Twitter: [Shiva Swaroop N K](https://x.com/shivu_2412)
+[MIT](LICENSE)
